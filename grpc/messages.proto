@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package dist.v1;
+
+option go_package = "github.com/socoteanuc/distributed-algos/protos/dist/v1";
+
+import "google/protobuf/timestamp.proto";
+
+message Event {
+    string id = 1;
+    string body = 2;
+    string description = 3;
+}
+
+message LamportMessage {
+    string nodeId = 1;
+    google.protobuf.Timestamp time = 2;
+    Event content = 3;
+}
+
+message CausalRecord {
+    Event source = 1;
+    Event destination = 2;
+}
+
+message Offset {
+    string offset = 1;
+}
+
+message StoreResponse {
+    string body = 1;
+}
+
+message ListRequest {
+    Offset offset = 1;
+    int32 limit = 2;
+}
+
+message ListResponse {
+    Offset offset = 1;
+    repeated CausalRecord causalEntries = 2;
+    repeated Event nonCausalEntries = 3;
+}
+
+service LamportClock {
+    rpc Store(LamportMessage) returns (StoreResponse) {}
+    rpc List(ListRequest) returns (ListResponse) {}
+}
