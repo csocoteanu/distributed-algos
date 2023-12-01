@@ -1,0 +1,23 @@
+[
+    {
+        "node_name": "server-A",
+        "port_number": 9000,
+        "ip_address": "127.0.0.1"
+    },
+    {
+        "node_name": "server-B",
+        "port_number": 9001,
+        "ip_address": "127.0.0.1"
+
+    },
+    {
+        "node_name": "server-C",
+        "port_number": 9002,
+        "ip_address": "127.0.0.1"
+    },
+    {
+        "node_name": "server-D",
+        "port_number": 9003,
+        "ip_address": "127.0.0.1"
+    }
+]
