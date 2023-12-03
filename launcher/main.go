@@ -7,11 +7,7 @@ import (
 )
 
 func main() {
-	lp, err := algos.NewLamportPeer(8080)
-	if err != nil {
-		panic(err)
-	}
-
+	lp := algos.NewLamportPeer(8080)
 	go lp.Start()
 
 	time.Sleep(5 * time.Second)
@@ -19,7 +15,7 @@ func main() {
 	defer lp.Stop()
 
 	lc := algos.NewLamportClient(8080)
-	err = lc.Send('e', "Hello Word!")
+	err := lc.Send('e', "Hello Word!")
 	if err != nil {
 		panic(err)
 	}

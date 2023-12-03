@@ -18,7 +18,7 @@ type LamportPeer struct {
 }
 
 // NewLamportPeer ...
-func NewLamportPeer(port int, opts ...tcp.ServerOpt) (*LamportPeer, error) {
+func NewLamportPeer(port int, opts ...tcp.ServerOpt) *LamportPeer {
 	lp := &LamportPeer{}
 
 	sb := tcp.NewMultiStreamBuilder(
@@ -35,7 +35,7 @@ func NewLamportPeer(port int, opts ...tcp.ServerOpt) (*LamportPeer, error) {
 	server := tcp.NewServer(port, tcp.WithStreamBuilder(sb))
 	lp.server = server
 
-	return lp, nil
+	return lp
 }
 
 func (lp *LamportPeer) Start() error {
