@@ -15,27 +15,6 @@ type Stream interface {
 	ReadNext(reader *bufio.Reader) (bool, string, error)
 }
 
-// SimpleStreamReader ...
-type SimpleStreamReader struct {
-}
-
-// NewSimpleStreamReader ...
-func NewSimpleStreamReader() *SimpleStreamReader {
-	return &SimpleStreamReader{}
-}
-
-// ReadNext ...
-func (ssr *SimpleStreamReader) ReadNext(reader *bufio.Reader) (bool, string, error) {
-	data, err := reader.ReadString('\n')
-	if err != nil {
-		return false, "", err
-	}
-
-	fmt.Printf("Received: %s\n", string(data))
-
-	return false, "ACK", nil
-}
-
 // MultiStreamReaderOpt ...
 type MultiStreamReaderOpt func(*MultiStreamReader)
 
@@ -113,7 +92,6 @@ func (msr *MultiStreamReader) ReadNext(reader *bufio.Reader) (bool, string, erro
 
 func readStringLength(reader *bufio.Reader) (int, error) {
 	len := 0
-
 	for i := 0; i < 4; i++ {
 		b, err := reader.ReadByte()
 		if err != nil {

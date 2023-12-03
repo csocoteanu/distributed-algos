@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 )
 
 // ServerOpt ...
@@ -19,6 +20,7 @@ type Server struct {
 	tcpContext    context.Context
 	tcpCancelFunc context.CancelFunc
 	tcpListener   net.Listener
+	tcpListenerMU *sync.Mutex
 }
 
 // WithIP ...
@@ -38,7 +40,8 @@ func WithStreamBuilder(b StreamBuilder) ServerOpt {
 // NewServer ...
 func NewServer(port int, opts ...ServerOpt) *Server {
 	s := Server{
-		port: port,
+		port:          port,
+		tcpListenerMU: &sync.Mutex{},
 	}
 
 	for _, opt := range opts {
@@ -68,9 +71,19 @@ func (s *Server) Stop() {
 	}
 }
 
+// IsStarted ...
+func (s *Server) IsStarted() bool {
+	s.tcpListenerMU.Lock()
+	defer s.tcpListenerMU.Unlock()
+
+	return s.tcpListener != nil
+}
+
 func (s *Server) acceptConnections(ctx context.Context, tcpListener net.Listener) {
+	s.tcpListenerMU.Lock()
 	s.tcpListener = tcpListener
 	s.tcpContext, s.tcpCancelFunc = context.WithCancel(ctx)
+	s.tcpListenerMU.Unlock()
 
 	defer s.tcpListener.Close()
 
