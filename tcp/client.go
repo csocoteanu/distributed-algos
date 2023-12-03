@@ -3,6 +3,7 @@ package tcp
 import (
 	"fmt"
 	"net"
+	"sync"
 )
 
 const defaultBuffSize = 1024
@@ -17,6 +18,7 @@ func WithClientIP(ip string) ClientOpt {
 	}
 }
 
+// WithBuffSize ...
 func WithBuffSize(size int) ClientOpt {
 	return func(c *Client) {
 		c.buffSize = size
@@ -29,40 +31,64 @@ type Client struct {
 	ip       string
 	buffSize int
 	conn     net.Conn
+	connMu   *sync.Mutex
 }
 
 // NewClient ...
-func NewClient(port int, opts ...ClientOpt) (*Client, error) {
+func NewClient(port int, opts ...ClientOpt) *Client {
 	c := Client{
-		port: port,
+		port:   port,
+		connMu: &sync.Mutex{},
 	}
 	for _, opt := range opts {
 		opt(&c)
 	}
 
-	remoteAddr := fmt.Sprintf("%s:%d", c.ip, c.port)
-	conn, err := net.Dial("tcp", remoteAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	c.conn = conn
 	if c.buffSize == 0 {
 		c.buffSize = defaultBuffSize
 	}
 
-	return &c, nil
+	return &c
 }
 
-// Send ...
-func (c *Client) Send(data string) error {
-	raw := []byte(data)
+// SendByte ...
+func (c *Client) SendByte(data byte) error {
+	err := c.initConnection()
+	if err != nil {
+		return fmt.Errorf("failed initializing client connection: %w", err)
+	}
 
-	return c.SendRaw(raw)
+	return c.sendBytes([]byte{data})
 }
 
-// SendRaw ...
-func (c *Client) SendRaw(data []byte) error {
+// SendString ...
+func (c *Client) SendString(str string) error {
+	err := c.initConnection()
+	if err != nil {
+		return fmt.Errorf("failed initializing client connection: %w", err)
+	}
+
+	strLen := len(str)
+	raw := []byte{
+		byte(strLen >> 24),
+		byte(strLen >> 16),
+		byte(strLen >> 8),
+		byte(strLen),
+	}
+	err = c.sendBytes(raw)
+	if err != nil {
+		fmt.Printf("Error sending length=%d for string=%s: %v\n",
+			strLen,
+			str,
+			err)
+		return fmt.Errorf("failed sending bytes: %w", err)
+	}
+
+	raw = []byte(str)
+	return c.sendBytes(raw)
+}
+
+func (c *Client) sendBytes(data []byte) error {
 	_, err := c.conn.Write(data)
 	if err != nil {
 		fmt.Printf("Error sending data: %v\n", err)
@@ -74,6 +100,8 @@ func (c *Client) SendRaw(data []byte) error {
 
 // Receive ...
 func (c *Client) Receive() (string, error) {
+	defer c.Close()
+
 	data := make([]byte, c.buffSize)
 	var result string
 
@@ -94,5 +122,32 @@ func (c *Client) Receive() (string, error) {
 
 // Close ...
 func (c *Client) Close() error {
-	return c.conn.Close()
+	c.connMu.Lock()
+	defer func() {
+		c.conn = nil
+		c.connMu.Unlock()
+	}()
+
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
+}
+
+func (c *Client) initConnection() error {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+
+	if c.conn != nil {
+		return nil
+	}
+
+	remoteAddr := fmt.Sprintf("%s:%d", c.ip, c.port)
+	conn, err := net.Dial("tcp", remoteAddr)
+	if err != nil {
+		return err
+	}
+
+	c.conn = conn
+	return nil
 }

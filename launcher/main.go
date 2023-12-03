@@ -18,12 +18,8 @@ func main() {
 	fmt.Println("Waiting for server to start...")
 	defer lp.Stop()
 
-	lc, err := algos.NewLamportClient(8080)
-	if err != nil {
-		panic(err)
-	}
-
-	err = lc.Send("Hello Word!")
+	lc := algos.NewLamportClient(8080)
+	err = lc.Send('e', "Hello Word!")
 	if err != nil {
 		panic(err)
 	}
@@ -32,6 +28,33 @@ func main() {
 		panic(err)
 	}
 	strData := string(data)
+	fmt.Printf("Main has received: %s\n", strData)
+
+	err = lc.Send('p', "ping")
+	if err != nil {
+		panic(err)
+	}
+	data, err = lc.Receive()
+	if err != nil {
+		panic(err)
+	}
+	strData = string(data)
+	fmt.Printf("Main has received: %s", strData)
+
+	err = lc.Close()
+	if err != nil {
+		panic(err)
+	}
+
+	err = lc.Send('p', "pinky hi")
+	if err != nil {
+		panic(err)
+	}
+	data, err = lc.Receive()
+	if err != nil {
+		panic(err)
+	}
+	strData = string(data)
 	fmt.Printf("Main has received: %s", strData)
 
 	err = lc.Close()

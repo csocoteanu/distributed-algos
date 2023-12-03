@@ -28,6 +28,7 @@ func WithIP(ipAddress string) ServerOpt {
 	}
 }
 
+// WithStreamBuilder ...
 func WithStreamBuilder(b StreamBuilder) ServerOpt {
 	return func(s *Server) {
 		s.streamBuilder = b

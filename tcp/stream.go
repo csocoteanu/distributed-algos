@@ -15,20 +15,6 @@ type Stream interface {
 	ReadNext(reader *bufio.Reader) (bool, string, error)
 }
 
-// SimpleStreamBuilder ...
-type SimpleStreamBuilder struct {
-}
-
-// NewSimpleStreamBuilder ...
-func NewSimpleStreamBuilder() *SimpleStreamBuilder {
-	return &SimpleStreamBuilder{}
-}
-
-// Build ...
-func (ssb *SimpleStreamBuilder) Build() (Stream, error) {
-	return NewSimpleStreamReader(), nil
-}
-
 // SimpleStreamReader ...
 type SimpleStreamReader struct {
 }
@@ -53,6 +39,12 @@ func (ssr *SimpleStreamReader) ReadNext(reader *bufio.Reader) (bool, string, err
 // MultiStreamReaderOpt ...
 type MultiStreamReaderOpt func(*MultiStreamReader)
 
+// MultiStreamMessageHandler ...
+type MultiStreamMessageHandler struct {
+	Identifier byte
+	Handler    func(string) (bool, string, error)
+}
+
 // WithMultiStreamHandler ...
 func WithMultiStreamHandler(handler MultiStreamMessageHandler) MultiStreamReaderOpt {
 	return func(msr *MultiStreamReader) {
@@ -60,6 +52,7 @@ func WithMultiStreamHandler(handler MultiStreamMessageHandler) MultiStreamReader
 	}
 }
 
+// MultiStreamBuilder ...
 type MultiStreamBuilder struct {
 	opts []MultiStreamReaderOpt
 }
@@ -104,16 +97,51 @@ func (msr *MultiStreamReader) ReadNext(reader *bufio.Reader) (bool, string, erro
 		return false, "", nil
 	}
 
-	len, err := reader.ReadByte()
+	len, err := readStringLength(reader)
 	if err != nil {
-		fmt.Println("Error reading length byte")
+		fmt.Printf("Error reading length bytes: %v\n", err)
 		return false, "", err
 	}
 
-	return h.Handler(len, reader)
+	str, err := readString(reader, len)
+	if err != nil {
+		fmt.Printf("Error reading string bytes: %v\n", err)
+	}
+
+	return h.Handler(str)
 }
 
-type MultiStreamMessageHandler struct {
-	Identifier byte
-	Handler    func(len uint8, reader *bufio.Reader) (bool, string, error)
+func readStringLength(reader *bufio.Reader) (int, error) {
+	len := 0
+
+	for i := 0; i < 4; i++ {
+		b, err := reader.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+
+		len = len << 8
+		len = len | int(b)
+	}
+
+	return len, nil
+}
+
+func readString(reader *bufio.Reader, len int) (string, error) {
+	var allBytes []byte
+	count := 0
+	for {
+		b, err := reader.ReadByte()
+		if err != nil {
+			return "", err
+		}
+
+		allBytes = append(allBytes, b)
+		count++
+		if count == len {
+			break
+		}
+	}
+
+	return string(allBytes), nil
 }
