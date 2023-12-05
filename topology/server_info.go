@@ -2,6 +2,7 @@ package topology
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 )
@@ -20,6 +21,11 @@ func NewServerInfo(name string, port int, ipAddress string) ServerInfo {
 		PortNumber: port,
 		IpAddress:  ipAddress,
 	}
+}
+
+// String ...
+func (s ServerInfo) String() string {
+	return fmt.Sprintf("[%s] %s:%d", s.NodeName, s.IpAddress, s.PortNumber)
 }
 
 // ReadAll ...

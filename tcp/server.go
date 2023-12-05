@@ -126,7 +126,10 @@ func (s *Server) handleConnection(ctx context.Context, c net.Conn) {
 		}
 
 		if len(response) > 0 {
-			fmt.Println("Writing response from Server..." + response)
+			fmt.Printf("Writing response=%s from server=%s:%d...\n",
+				response,
+				s.ipAddress,
+				s.port)
 			_, err = c.Write([]byte(response))
 			if err != nil {
 				fmt.Printf("Could not write to connection response: %v\n", err)
