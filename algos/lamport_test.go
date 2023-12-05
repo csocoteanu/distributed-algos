@@ -8,13 +8,13 @@ import (
 )
 
 func TestBroadcast(t *testing.T) {
+	// create server topology
 	serverInfos := []topology.ServerInfo{
 		topology.NewServerInfo("A", 8080, ""),
 		topology.NewServerInfo("B", 8081, ""),
 		topology.NewServerInfo("C", 8082, ""),
 		topology.NewServerInfo("D", 8083, ""),
 	}
-
 	var peers []*LamportPeer
 	for i, sInfo := range serverInfos {
 		var peerTopology []topology.ServerInfo
@@ -29,6 +29,7 @@ func TestBroadcast(t *testing.T) {
 		peers = append(peers, peer)
 	}
 
+	// start the servers
 	for _, p := range peers {
 		go p.Start()
 	}
@@ -40,6 +41,7 @@ func TestBroadcast(t *testing.T) {
 	// TODO: replace time.Sleep
 	time.Sleep(5 * time.Second)
 
+	// each server broadcasts it's own message in the network
 	for i, peer := range peers {
 		go func(index int, p *LamportPeer) {
 			message := fmt.Sprintf("message-%s", p.me.NodeName)
@@ -53,6 +55,7 @@ func TestBroadcast(t *testing.T) {
 	// TODO: replace time.Sleep
 	time.Sleep(5 * time.Second)
 
+	// check all nodes receive the messages in the exact same order
 	expectMessageOrder := []string{
 		"message-D",
 		"message-C",
