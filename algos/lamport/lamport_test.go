@@ -1,4 +1,4 @@
-package algos
+package lamport
 
 import (
 	"distributed-algos/topology"

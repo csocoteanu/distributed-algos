@@ -1,4 +1,4 @@
-package algos
+package lamport
 
 import (
 	"context"
