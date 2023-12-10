@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 const defaultBuffSize = 1024
@@ -15,6 +16,13 @@ type ClientOpt func(*Client)
 func WithClientIP(ip string) ClientOpt {
 	return func(c *Client) {
 		c.ip = ip
+	}
+}
+
+// WithClientTimeout ...
+func WithClientTimeout(timeout time.Duration) ClientOpt {
+	return func(c *Client) {
+		c.timeout = &timeout
 	}
 }
 
@@ -30,6 +38,7 @@ type Client struct {
 	port     int
 	ip       string
 	buffSize int
+	timeout  *time.Duration
 	conn     net.Conn
 	connMu   *sync.Mutex
 }
@@ -143,7 +152,14 @@ func (c *Client) initConnection() error {
 	}
 
 	remoteAddr := fmt.Sprintf("%s:%d", c.ip, c.port)
-	conn, err := net.Dial("tcp", remoteAddr)
+	var conn net.Conn
+	var err error
+	if c.timeout != nil {
+		d := net.Dialer{Timeout: *c.timeout}
+		conn, err = d.Dial("tcp", remoteAddr)
+	} else {
+		conn, err = net.Dial("tcp", remoteAddr)
+	}
 	if err != nil {
 		return err
 	}

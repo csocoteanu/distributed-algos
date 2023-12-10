@@ -10,6 +10,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"time"
 )
 
 const (
@@ -77,7 +78,18 @@ func (lc *lamportClient) sendBroadcast(strMessage string) error {
 }
 
 type broadcastResult struct {
-	err error
+	err      error
+	nodeName string
+}
+
+// LamportOpt ...
+type LamportOpt func(*LamportPeer)
+
+// WithLamportTimeout ...
+func WithLamportTimeout(timeout time.Duration) LamportOpt {
+	return func(lp *LamportPeer) {
+		lp.timeout = &timeout
+	}
 }
 
 // LamportPeer ...
@@ -85,6 +97,7 @@ type LamportPeer struct {
 	me           topology.ServerInfo
 	peers        map[string]*lamportClient
 	messages     []LamportMessage
+	timeout      *time.Duration
 	serverTime   int
 	serverTimeMU *sync.Mutex
 
@@ -95,13 +108,16 @@ type LamportPeer struct {
 func NewLamportPeer(
 	me topology.ServerInfo,
 	peers []topology.ServerInfo,
-	opts ...tcp.ServerOpt) *LamportPeer {
+	opts ...LamportOpt) *LamportPeer {
 
 	lp := &LamportPeer{
 		me:           me,
 		peers:        make(map[string]*lamportClient),
 		serverTime:   0,
 		serverTimeMU: &sync.Mutex{},
+	}
+	for _, opt := range opts {
+		opt(lp)
 	}
 
 	lp.initServer()
@@ -122,7 +138,7 @@ func (lp *LamportPeer) Start() error {
 
 // Stop ...
 func (lp *LamportPeer) Stop() {
-	lp.server.Stop()
+	defer lp.server.Stop()
 
 	for _, p := range lp.peers {
 		p.client.Close()
@@ -171,18 +187,17 @@ func (lp *LamportPeer) Broadcast(message string) error {
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(lp.peers))
-	statusChan := make(chan broadcastResult)
+	statusChan := make(chan broadcastResult, len(lp.peers))
 
 	for _, p := range lp.peers {
 		go func(client *lamportClient) {
 			defer wg.Done()
 
-			var status broadcastResult
 			err = client.sendBroadcast(strMessage)
-			if err != nil {
-				status.err = err
+			statusChan <- broadcastResult{
+				err:      err,
+				nodeName: lp.me.String(),
 			}
-			statusChan <- status
 		}(p)
 	}
 
@@ -213,8 +228,14 @@ func (lp *LamportPeer) initServer() {
 }
 
 func (lp *LamportPeer) initPeers(peers []topology.ServerInfo) {
+
 	for _, p := range peers {
-		c := tcp.NewClient(p.PortNumber, tcp.WithClientIP(p.IpAddress))
+		opts := []tcp.ClientOpt{tcp.WithClientIP(p.IpAddress)}
+		if lp.timeout != nil {
+			opts = append(opts, tcp.WithClientTimeout(*lp.timeout))
+		}
+
+		c := tcp.NewClient(p.PortNumber, opts...)
 		lp.peers[p.NodeName] = newLamportClient(p, lp, c)
 	}
 }
