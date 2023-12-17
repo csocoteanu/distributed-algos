@@ -62,7 +62,11 @@ func (lc *lamportClient) sendBroadcast(strMessage string) error {
 	if err != nil {
 		return fmt.Errorf("failed sending message id broadcast from node=%s id: %w", lc.peer.me, err)
 	}
-	err = lc.client.SendString(strMessage)
+
+	msg := tcp.MultiStreamMessage{
+		StringValue: &strMessage,
+	}
+	err = msg.Send(lc.client)
 	if err != nil {
 		return fmt.Errorf("failed sending message broadcast from node=%s id: %w", lc.peer.me, err)
 	}
@@ -240,16 +244,16 @@ func (lp *LamportPeer) initPeers(peers []topology.ServerInfo) {
 	}
 }
 
-func (lp *LamportPeer) receiveBroadcast(str string) (bool, string, error) {
+func (lp *LamportPeer) receiveBroadcast(msg tcp.MultiStreamMessage) (bool, string, error) {
 	fmt.Printf("Handling broadcast on node=%s....\n", lp.me)
-	fmt.Printf("Received in broadcast handler=%s on node=%s...\n", str, lp.me)
+	fmt.Printf("Received in broadcast handler=%s on node=%s...\n", *msg.StringValue, lp.me)
 
 	var m LamportMessage
-	err := Deserialize([]byte(str), &m)
+	err := Deserialize([]byte(*msg.StringValue), &m)
 	if err != nil {
 		fmt.Printf("Unable to unmarshall Lamport Message on node=%s message=%s...\n",
 			lp.me,
-			str)
+			*msg.StringValue)
 		return false, "", fmt.Errorf("unable to unmarshall json: %w", err)
 	}
 

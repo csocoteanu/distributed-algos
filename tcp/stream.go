@@ -15,82 +15,49 @@ type Stream interface {
 	ReadNext(reader *bufio.Reader) (bool, string, error)
 }
 
-// MultiStreamReaderOpt ...
-type MultiStreamReaderOpt func(*MultiStreamReader)
+// StringHandler ...
+type StringHandler func(string) (bool, string, error)
 
-// MultiStreamMessageHandler ...
-type MultiStreamMessageHandler struct {
-	Identifier byte
-	Handler    func(string) (bool, string, error)
+// StringStreamBuilder ...
+type StringStreamBuilder struct {
+	fn StringHandler
 }
 
-// WithMultiStreamHandler ...
-func WithMultiStreamHandler(handler MultiStreamMessageHandler) MultiStreamReaderOpt {
-	return func(msr *MultiStreamReader) {
-		msr.handlers[handler.Identifier] = handler
+// NewStringStreamBuilder ...
+func NewStringStreamBuilder(fn StringHandler) *StringStreamBuilder {
+	return &StringStreamBuilder{
+		fn: fn,
 	}
 }
 
-// MultiStreamBuilder ...
-type MultiStreamBuilder struct {
-	opts []MultiStreamReaderOpt
+// NewStringStreamBuilder ...
+func (ssb *StringStreamBuilder) Build() (Stream, error) {
+	return &StringReader{
+		handler: ssb.fn,
+	}, nil
 }
 
-// NewMultiStreamBuilder ...
-func NewMultiStreamBuilder(opts ...MultiStreamReaderOpt) *MultiStreamBuilder {
-	return &MultiStreamBuilder{
-		opts: opts,
-	}
-}
-
-// Build ...
-func (msb *MultiStreamBuilder) Build() (Stream, error) {
-	msr := &MultiStreamReader{
-		handlers: make(map[byte]MultiStreamMessageHandler),
-	}
-
-	for _, opt := range msb.opts {
-		opt(msr)
-	}
-
-	return msr, nil
-}
-
-// MultiStreamReader ...
-type MultiStreamReader struct {
-	handlers map[byte]MultiStreamMessageHandler
+// StringReader ...
+type StringReader struct {
+	handler func(string) (bool, string, error)
 }
 
 // ReadNext ...
-func (msr *MultiStreamReader) ReadNext(reader *bufio.Reader) (bool, string, error) {
-	fmt.Println("Reading in multistream...")
-
-	b, err := reader.ReadByte()
+func (sr *StringReader) ReadNext(reader *bufio.Reader) (bool, string, error) {
+	str, err := readString(reader)
 	if err != nil {
-		fmt.Println("Error reading first byte")
-		return false, "", err
-	}
-	h, ok := msr.handlers[b]
-	if !ok {
-		fmt.Println("No handler found in multistream...")
-		return false, "", nil
+		return false, "", fmt.Errorf("error reading string: %w", err)
 	}
 
-	len, err := readStringLength(reader)
-	if err != nil {
-		fmt.Printf("Error reading length bytes: %v\n", err)
-		return false, "", err
+	result := str
+	if sr.handler != nil {
+		return sr.handler(result)
 	}
 
-	str, err := readString(reader, len)
-	if err != nil {
-		fmt.Printf("Error reading string bytes: %v\n", err)
-	}
-
-	return h.Handler(str)
+	return false, result, nil
 }
 
-func readStringLength(reader *bufio.Reader) (int, error) {
+func readInt(reader *bufio.Reader) (int, error) {
 	len := 0
 	for i := 0; i < 4; i++ {
 		b, err := reader.ReadByte()
@@ -105,7 +72,12 @@ func readStringLength(reader *bufio.Reader) (int, error) {
 	return len, nil
 }
 
-func readString(reader *bufio.Reader, len int) (string, error) {
+func readString(reader *bufio.Reader) (string, error) {
+	len, err := readInt(reader)
+	if err != nil {
+		return "", fmt.Errorf("failed reading string length: %w", err)
+	}
+
 	var allBytes []byte
 	count := 0
 	for {

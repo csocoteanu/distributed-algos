@@ -7,38 +7,45 @@ import (
 	"time"
 )
 
-type testTCPPeer struct {
-	server *Server
+func newTestServer(portNum int, callback StringHandler) *Server {
+	sb := NewStringStreamBuilder(callback)
+
+	return NewServer(portNum, WithStreamBuilder(sb))
 }
 
-func newTestTCPPeer() *testTCPPeer {
-	tp := testTCPPeer{}
+func waitForServerStart(ctx context.Context, server *Server) error {
+	isStarted := false
+	startTimer := time.NewTimer(200 * time.Millisecond)
+	cancelCtx, cancelFunc := context.WithTimeout(ctx, 10*time.Second)
 
-	sb := NewMultiStreamBuilder(
-		WithMultiStreamHandler(MultiStreamMessageHandler{
-			Identifier: 'e',
-			Handler:    tp.handleEcho,
-		}),
-		WithMultiStreamHandler(MultiStreamMessageHandler{
-			Identifier: 'p',
-			Handler:    tp.handlePingPong,
-		}),
-	)
+	defer startTimer.Stop()
+	defer cancelFunc()
 
-	server := NewServer(19999, WithStreamBuilder(sb))
-	tp.server = server
+	for !isStarted {
+		select {
+		case <-startTimer.C:
+			isStarted = server.IsStarted()
+			if isStarted {
+				return nil
+			}
+		case <-cancelCtx.Done():
+			if !server.IsStarted() {
+				return fmt.Errorf("tcp server failed starting in grace period...")
+			}
+		}
+	}
 
-	return &tp
+	return nil
 }
 
-func (tp *testTCPPeer) handleEcho(str string) (bool, string, error) {
+func handleEcho(str string) (bool, string, error) {
 	fmt.Println("Handling echo....")
 	fmt.Printf("Received in echo handler: %s\n", str)
 
 	return false, str, nil
 }
 
-func (tp *testTCPPeer) handlePingPong(str string) (bool, string, error) {
+func handlePingPong(str string) (bool, string, error) {
 	fmt.Println("Handling ping pong....")
 	fmt.Printf("Received in ping pong handler: %s\n", str)
 
@@ -51,59 +58,35 @@ func (tp *testTCPPeer) handlePingPong(str string) (bool, string, error) {
 
 type tcpTestCase struct {
 	tcName        string
-	messageType   byte
+	portNum       int
+	fn            StringHandler
 	inputMessage  string
 	outputMessage string
 	hasError      bool
 }
 
-func TestMultiStreamReader_ReadNext(t *testing.T) {
-	tp := newTestTCPPeer()
-
-	isStarted := false
-	startTimer := time.NewTimer(200 * time.Millisecond)
-	ctx, timeoutFunc := context.WithTimeout(context.Background(), 10*time.Second)
-	defer timeoutFunc()
-
-	go func() {
-		err := tp.server.Start(ctx)
-		if err != nil {
-			panic(err)
-		}
-	}()
-	for !isStarted {
-		select {
-		case <-startTimer.C:
-			isStarted = tp.server.IsStarted()
-		case <-ctx.Done():
-			if tp.server.IsStarted() {
-				t.Fatal("tcp server failed starting in grace period...")
-			}
-		}
-	}
-	defer tp.server.Stop()
-
-	tcpClient := NewClient(tp.server.port)
-	defer tcpClient.Close()
-
+func TestStringStreamReadNext(t *testing.T) {
 	testCases := []tcpTestCase{
 		{
 			tcName:        "echo",
-			messageType:   'e',
+			portNum:       9090,
+			fn:            handleEcho,
 			inputMessage:  "Hello world!",
 			outputMessage: "Hello world!",
 			hasError:      false,
 		},
 		{
 			tcName:        "ping-pong",
-			messageType:   'p',
+			portNum:       9091,
+			fn:            handlePingPong,
 			inputMessage:  "ping",
 			outputMessage: "pong",
 			hasError:      false,
 		},
 		{
 			tcName:        "ping-pong with invalid message type",
-			messageType:   'p',
+			portNum:       9092,
+			fn:            handlePingPong,
 			inputMessage:  "Hello!",
 			outputMessage: "",
 			hasError:      true,
@@ -113,10 +96,23 @@ func TestMultiStreamReader_ReadNext(t *testing.T) {
 	for _, tc := range testCases {
 		fmt.Printf("Running %s...\n", tc.tcName)
 
-		err := tcpClient.SendByte(tc.messageType)
+		server := newTestServer(tc.portNum, tc.fn)
+		ctx := context.Background()
+		go func() {
+			err := server.Start(ctx)
+			if err != nil {
+				fmt.Printf("failed starting %s server: %v", tc.tcName, err)
+			}
+		}()
+		defer server.Stop()
+
+		err := waitForServerStart(ctx, server)
 		if err != nil {
-			t.Fatalf("unable to send %s message type: %v", tc.tcName, err)
+			t.Fatalf("failed starting %s server: %v", tc.tcName, err)
 		}
+
+		tcpClient := NewClient(tc.portNum)
+		defer tcpClient.Close()
 
 		err = tcpClient.SendString(tc.inputMessage)
 		if err != nil {
