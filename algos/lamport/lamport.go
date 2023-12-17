@@ -58,15 +58,11 @@ func newLamportClient(
 }
 
 func (lc *lamportClient) sendBroadcast(strMessage string) error {
-	err := lc.client.SendByte(broadcastMessageType)
-	if err != nil {
-		return fmt.Errorf("failed sending message id broadcast from node=%s id: %w", lc.peer.me, err)
-	}
-
 	msg := tcp.MultiStreamMessage{
-		StringValue: &strMessage,
+		MultiStreamType: broadcastMessageType,
+		StringValue:     &strMessage,
 	}
-	err = msg.Send(lc.client)
+	err := msg.Send(lc.client)
 	if err != nil {
 		return fmt.Errorf("failed sending message broadcast from node=%s id: %w", lc.peer.me, err)
 	}

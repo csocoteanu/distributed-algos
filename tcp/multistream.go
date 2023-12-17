@@ -30,12 +30,12 @@ func (t MultiStreamMessageType) HasType(t2 MultiStreamMessageType) bool {
 
 // MultiStreamMessage ...
 type MultiStreamMessage struct {
-	Types       MultiStreamMessageType
-	ByteValue   *byte
-	IntValue    *int
-	StringValue *string
-	IntValues   []int
-	StrValues   []string
+	MultiStreamType byte
+	ByteValue       *byte
+	IntValue        *int
+	StringValue     *string
+	IntValues       []int
+	StrValues       []string
 }
 
 // Read ...
@@ -104,6 +104,15 @@ func (msm *MultiStreamMessage) Read(reader *bufio.Reader) error {
 // Send ...
 func (msm *MultiStreamMessage) Send(c *Client) error {
 	var err error
+
+	if msm.MultiStreamType == 0 {
+		return fmt.Errorf("no type set")
+	}
+
+	err = c.SendByte(msm.MultiStreamType)
+	if err != nil {
+		return fmt.Errorf("failed sending multistream type=%+v: %w", msm.MultiStreamType, err)
+	}
 
 	if msm.ByteValue != nil {
 		err = c.SendByte(byte(BYTETYPE))
@@ -230,5 +239,6 @@ func (msr *MultiStreamReader) ReadNext(reader *bufio.Reader) (bool, string, erro
 		return false, "", fmt.Errorf("failed reading multistream message: %w", err)
 	}
 
+	msm.MultiStreamType = b
 	return h.Handler(msm)
 }

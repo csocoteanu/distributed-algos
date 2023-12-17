@@ -17,6 +17,10 @@ func newMultiStreamServer(portNum int) *Server {
 			Identifier: 2,
 			Handler:    handleStrings,
 		}),
+		WithMultiStreamHandler(MultiStreamMessageHandler{
+			Identifier: 3,
+			Handler:    handleIntsAndStrings,
+		}),
 	)
 
 	return NewServer(portNum, WithStreamBuilder(sb))
@@ -47,6 +51,22 @@ func handleStrings(msg MultiStreamMessage) (bool, string, error) {
 	}
 
 	return false, strings.Join(msg.StrValues, ","), nil
+}
+
+func handleIntsAndStrings(msg MultiStreamMessage) (bool, string, error) {
+	fmt.Println("Handling ints and strings....")
+	fmt.Printf("Received in ints and strings handler: %v\n", msg)
+
+	_, ints, err := handleInts(msg)
+	if err != nil {
+		return false, "", err
+	}
+	_, str, err := handleStrings(msg)
+	if err != nil {
+		return false, "", err
+	}
+
+	return false, fmt.Sprintf("%s,%s", ints, str), nil
 }
 
 type tcpMultiStreamTestCase struct {
@@ -89,24 +109,24 @@ func TestMultiStreamTCP(t *testing.T) {
 			strValues:         []string{"hello", "world", "this", "is", "a", "test"},
 			expectedOutput:    "hello,world,this,is,a,test",
 		},
+		{
+			tcName:            "testing multistream ints and strings",
+			streamMessageType: 3,
+			intValues:         []int{1, 2, 3, 4, 5},
+			strValues:         []string{"hello", "world", "this", "is", "a", "test"},
+			expectedOutput:    "15,hello,world,this,is,a,test",
+		},
 	}
 
 	for _, tc := range tests {
 		fmt.Printf("Running %s...\n", tc.tcName)
 
-		msm := MultiStreamMessage{}
-		if len(tc.intValues) > 0 {
-			msm.IntValues = tc.intValues
+		msm := MultiStreamMessage{
+			MultiStreamType: tc.streamMessageType,
+			IntValues:       tc.intValues,
+			StrValues:       tc.strValues,
 		}
-		if len(tc.strValues) > 0 {
-			msm.StrValues = tc.strValues
-		}
-
-		err := client.SendByte(tc.streamMessageType)
-		if err != nil {
-			t.Fatalf("failed sending multistream message type=%+v: %v", tc.streamMessageType, err)
-		}
-		err = msm.Send(client)
+		err := msm.Send(client)
 		if err != nil {
 			t.Fatalf("failed sending multistream message= %+v: %v", msm, err)
 		}
