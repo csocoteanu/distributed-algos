@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	broadcastMessageType  = 'b'
 	broadCastPeerResponse = "ACK"
 )
 
@@ -58,11 +57,7 @@ func newLamportClient(
 }
 
 func (lc *lamportClient) sendBroadcast(strMessage string) error {
-	msg := tcp.MultiStreamMessage{
-		MultiStreamType: broadcastMessageType,
-		StringValue:     &strMessage,
-	}
-	err := msg.Send(lc.client)
+	err := lc.client.SendString(strMessage)
 	if err != nil {
 		return fmt.Errorf("failed sending message broadcast from node=%s id: %w", lc.peer.me, err)
 	}
@@ -214,12 +209,8 @@ func (lp *LamportPeer) Broadcast(message string) error {
 }
 
 func (lp *LamportPeer) initServer() {
-	sb := tcp.NewMultiStreamBuilder(
-		tcp.WithMultiStreamHandler(tcp.MultiStreamMessageHandler{
-			Identifier: broadcastMessageType,
-			Handler:    lp.receiveBroadcast,
-		}),
-	)
+	sb := tcp.NewStringStreamBuilder(lp.receiveBroadcast)
+
 	server := tcp.NewServer(
 		lp.me.PortNumber,
 		tcp.WithStreamBuilder(sb),
@@ -228,7 +219,6 @@ func (lp *LamportPeer) initServer() {
 }
 
 func (lp *LamportPeer) initPeers(peers []topology.ServerInfo) {
-
 	for _, p := range peers {
 		opts := []tcp.ClientOpt{tcp.WithClientIP(p.IpAddress)}
 		if lp.timeout != nil {
@@ -240,16 +230,16 @@ func (lp *LamportPeer) initPeers(peers []topology.ServerInfo) {
 	}
 }
 
-func (lp *LamportPeer) receiveBroadcast(msg tcp.MultiStreamMessage) (bool, string, error) {
+func (lp *LamportPeer) receiveBroadcast(msg string) (bool, string, error) {
 	fmt.Printf("Handling broadcast on node=%s....\n", lp.me)
-	fmt.Printf("Received in broadcast handler=%s on node=%s...\n", *msg.StringValue, lp.me)
+	fmt.Printf("Received in broadcast handler=%s on node=%s...\n", msg, lp.me)
 
 	var m LamportMessage
-	err := Deserialize([]byte(*msg.StringValue), &m)
+	err := Deserialize([]byte(msg), &m)
 	if err != nil {
 		fmt.Printf("Unable to unmarshall Lamport Message on node=%s message=%s...\n",
 			lp.me,
-			*msg.StringValue)
+			msg)
 		return false, "", fmt.Errorf("unable to unmarshall json: %w", err)
 	}
 
