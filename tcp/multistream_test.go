@@ -88,7 +88,7 @@ func TestMultiStreamTCP(t *testing.T) {
 			fmt.Printf("failed starting server: %v", err)
 		}
 	}()
-	err := waitForServerStart(ctx, server)
+	err := WaitForServerStart(ctx, server)
 	if err != nil {
 		t.Fatalf("failed waiting for server to start: %v", err)
 	}

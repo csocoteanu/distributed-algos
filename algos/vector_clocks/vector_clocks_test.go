@@ -35,8 +35,14 @@ func TestReceiveBroadcast(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 	str := string(b)
-	peers[0].receiveBroadcast(str)
-	peers[1].receiveBroadcast(str)
+	_, _, err = peers[0].receiveBroadcast(str)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	_, _, err = peers[1].receiveBroadcast(str)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 
 	m = peers[1].newMessage("message-B")
 	b, err = Serialize(m)
@@ -44,16 +50,34 @@ func TestReceiveBroadcast(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 	str = string(b)
-	peers[0].receiveBroadcast(str)
-	peers[2].receiveBroadcast(str)
+	_, _, err = peers[0].receiveBroadcast(str)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	_, _, err = peers[2].receiveBroadcast(str)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 
 	m = peers[0].newMessage("message-A")
 	b, err = Serialize(m)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	peers[1].receiveBroadcast(string(b))
-	peers[2].receiveBroadcast(string(b))
+	_, _, err = peers[1].receiveBroadcast(string(b))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	_, _, err = peers[2].receiveBroadcast(string(b))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	checkExpectedMessages(peers, []string{
+		"message-C",
+		"message-B",
+		"message-A",
+	}, t)
 }
 
 func TestBroadcast(t *testing.T) {
@@ -86,6 +110,7 @@ func TestBroadcast(t *testing.T) {
 			p.Stop()
 		}
 	}()
+
 	// TODO: replace time.Sleep
 	time.Sleep(5 * time.Second)
 
@@ -124,18 +149,22 @@ func TestBroadcast(t *testing.T) {
 		"message-B",
 		"message-A",
 	}
+	checkExpectedMessages(peers, expectMessageOrder, t)
+}
+
+func checkExpectedMessages(peers []*VectorClocksPeer, expectedMessages []string, t *testing.T) {
 	for _, p := range peers {
-		messages := p.Messages(false)
+		messages := p.Messages()
 		for i, m := range messages {
-			if expectMessageOrder[i] != m {
+			if expectedMessages[i] != m {
 				allNodes := make([]string, 0, len(peers))
 				for _, p := range peers {
-					allNodes = append(allNodes, fmt.Sprintf("[%s]->>%+v\n", p.WhoAmI(), p.Messages(true)))
+					allNodes = append(allNodes, fmt.Sprintf("[%s]->>%+v\n", p.WhoAmI(), p.Messages()))
 				}
 
 				t.Fatalf("Unexpected message order for node=%s. total order is=%+v, but got=%+v\n\nall nodes=%+v",
 					p.WhoAmI(),
-					expectMessageOrder,
+					expectedMessages,
 					messages,
 					allNodes)
 			}

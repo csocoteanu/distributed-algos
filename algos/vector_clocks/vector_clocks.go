@@ -87,6 +87,14 @@ func WithTimeout(timeout time.Duration) VectorClocksOpt {
 	}
 }
 
+// WithDebug ...
+func WithDebug() VectorClocksOpt {
+	return func(p *VectorClocksPeer) {
+		// TODO: add debug logging
+		p.isDebugOn = true
+	}
+}
+
 // VectorClocksPeer ...
 type VectorClocksPeer struct {
 	me      topology.ServerInfo
@@ -94,6 +102,7 @@ type VectorClocksPeer struct {
 	server  *tcp.Server
 	peers   map[string]*vectorClocksClient
 
+	isDebugOn       bool
 	sortedPeerNames []string
 	messages        []VectorClocksMessage
 	serverTimes     map[string]int
@@ -150,11 +159,15 @@ func (p *VectorClocksPeer) WhoAmI() string {
 	}
 	p.serverTimeMU.Unlock()
 
-	return fmt.Sprintf("[-->%s<-- %+v]", p.me.String(), times)
+	if p.isDebugOn {
+		return fmt.Sprintf("[-->%s<-- %+v]", p.me.String(), times)
+	}
+
+	return p.me.String()
 }
 
 // Messages ...
-func (p *VectorClocksPeer) Messages(withMessageTimes bool) []string {
+func (p *VectorClocksPeer) Messages() []string {
 	sort.Slice(p.messages, func(i, j int) bool {
 		m1 := p.messages[i]
 		m2 := p.messages[j]
@@ -171,7 +184,7 @@ func (p *VectorClocksPeer) Messages(withMessageTimes bool) []string {
 	var messages []string
 	for _, m := range p.messages {
 		msg := m.Body
-		if withMessageTimes {
+		if p.isDebugOn {
 			msg = fmt.Sprintf("%s:%+v", m.Body, m.Timestamps)
 		}
 		messages = append(messages, msg)

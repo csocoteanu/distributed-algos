@@ -7,13 +7,8 @@ import (
 	"time"
 )
 
-func newTestServer(portNum int, callback StringHandler) *Server {
-	sb := NewStringStreamBuilder(callback)
-
-	return NewServer(portNum, WithStreamBuilder(sb))
-}
-
-func waitForServerStart(ctx context.Context, server *Server) error {
+// WaitForServerStart ...
+func WaitForServerStart(ctx context.Context, server *Server) error {
 	isStarted := false
 	startTimer := time.NewTimer(200 * time.Millisecond)
 	cancelCtx, cancelFunc := context.WithTimeout(ctx, 10*time.Second)
@@ -36,6 +31,12 @@ func waitForServerStart(ctx context.Context, server *Server) error {
 	}
 
 	return nil
+}
+
+func newTestServer(portNum int, callback StringHandler) *Server {
+	sb := NewStringStreamBuilder(callback)
+
+	return NewServer(portNum, WithStreamBuilder(sb))
 }
 
 func handleEcho(str string) (bool, string, error) {
@@ -106,7 +107,7 @@ func TestStringStreamReadNext(t *testing.T) {
 		}()
 		defer server.Stop()
 
-		err := waitForServerStart(ctx, server)
+		err := WaitForServerStart(ctx, server)
 		if err != nil {
 			t.Fatalf("failed starting %s server: %v", tc.tcName, err)
 		}
