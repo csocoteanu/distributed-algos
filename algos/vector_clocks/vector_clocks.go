@@ -89,14 +89,15 @@ func WithTimeout(timeout time.Duration) VectorClocksOpt {
 
 // VectorClocksPeer ...
 type VectorClocksPeer struct {
-	me           topology.ServerInfo
-	peers        map[string]*vectorClocksClient
-	messages     []VectorClocksMessage
-	timeout      *time.Duration
-	serverTimes  map[string]int
-	serverTimeMU *sync.Mutex
+	me      topology.ServerInfo
+	timeout *time.Duration
+	server  *tcp.Server
+	peers   map[string]*vectorClocksClient
 
-	server *tcp.Server
+	sortedPeerNames []string
+	messages        []VectorClocksMessage
+	serverTimes     map[string]int
+	serverTimeMU    *sync.Mutex
 }
 
 // NewVectorClocksPeer ...
@@ -143,34 +144,44 @@ func (lp *VectorClocksPeer) Stop() {
 // WhoAmI ...
 func (p *VectorClocksPeer) WhoAmI() string {
 	p.serverTimeMU.Lock()
-	var times []int
-	for _, t := range p.serverTimes {
-		times = append(times, t)
+	var times []string
+	for nodeName, t := range p.serverTimes {
+		times = append(times, fmt.Sprintf("%s:%d", nodeName, t))
 	}
 	p.serverTimeMU.Unlock()
 
-	return fmt.Sprintf("[%s - %+v]", p.me.String(), times)
+	return fmt.Sprintf("[-->%s<-- %+v]", p.me.String(), times)
 }
 
 // Messages ...
-func (p *VectorClocksPeer) Messages() []VectorClocksMessage {
+func (p *VectorClocksPeer) Messages(withMessageTimes bool) []string {
 	sort.Slice(p.messages, func(i, j int) bool {
-		nodeI := p.messages[i].Origin.NodeName
-		nodeJ := p.messages[j].Origin.NodeName
-		return p.serverTimes[nodeI] <= p.serverTimes[nodeJ]
+		m1 := p.messages[i]
+		m2 := p.messages[j]
+		happensBeforeCount := 0
+		for _, nodeName := range p.sortedPeerNames {
+			if m1.Timestamps[nodeName] < m2.Timestamps[nodeName] {
+				happensBeforeCount++
+			}
+		}
+
+		return happensBeforeCount == len(p.sortedPeerNames)
 	})
 
-	return p.messages
+	var messages []string
+	for _, m := range p.messages {
+		msg := m.Body
+		if withMessageTimes {
+			msg = fmt.Sprintf("%s:%+v", m.Body, m.Timestamps)
+		}
+		messages = append(messages, msg)
+	}
+	return messages
 }
 
 // Broadcast ...
 func (p *VectorClocksPeer) Broadcast(message string) error {
-	p.serverTimeMU.Lock()
-	p.serverTimes[p.me.NodeName]++
 	m := p.newMessage(message)
-	p.messages = append(p.messages, m)
-	p.serverTimeMU.Unlock()
-
 	bytes, err := Serialize(m)
 	if err != nil {
 		return fmt.Errorf("failed marshalling message=%s on node=%s timestamp: %w",
@@ -208,6 +219,41 @@ func (p *VectorClocksPeer) Broadcast(message string) error {
 	return errors.Join(errs...)
 }
 
+func (p *VectorClocksPeer) receiveBroadcast(strMessage string) (bool, string, error) {
+	fmt.Printf("Handling broadcast on node=%s....\n", p.me)
+	fmt.Printf("Received in broadcast handler=%s on node=%s...\n", strMessage, p.me)
+
+	var m VectorClocksMessage
+	err := Deserialize([]byte(strMessage), &m)
+	if err != nil {
+		fmt.Printf("Unable to unmarshall Lamport Message on node=%s message=%s...\n", p.me, strMessage)
+		return false, "", fmt.Errorf("unable to unmarshall json: %w", err)
+	}
+
+	p.serverTimeMU.Lock()
+
+	// update local server times
+	for node, ts := range m.Timestamps {
+		if node == p.me.NodeName {
+			continue
+		}
+		existingTs := p.serverTimes[node]
+		ts := math.Max(float64(ts), float64(existingTs))
+		p.serverTimes[node] = int(ts)
+	}
+	p.serverTimes[p.me.NodeName]++
+
+	// add message to local messages
+	for nodeName, ts := range p.serverTimes {
+		m.Timestamps[nodeName] = ts
+	}
+	p.messages = append(p.messages, m)
+	p.serverTimeMU.Unlock()
+
+	fmt.Printf("Received message=%s on node=%s...\n", m.Body, p.WhoAmI())
+	return false, broadCastPeerResponse, nil
+}
+
 func (p *VectorClocksPeer) initServer() {
 	sb := tcp.NewStringStreamBuilder(p.receiveBroadcast)
 	server := tcp.NewServer(
@@ -229,40 +275,27 @@ func (p *VectorClocksPeer) initPeers(peers []topology.ServerInfo) {
 		c := tcp.NewClient(peer.PortNumber, opts...)
 		p.peers[peer.NodeName] = newVectorClocksClient(peer, p, c)
 		p.serverTimes[peer.NodeName] = 0
-	}
-}
-
-func (p *VectorClocksPeer) receiveBroadcast(strMessage string) (bool, string, error) {
-	fmt.Printf("Handling broadcast on node=%s....\n", p.me)
-	fmt.Printf("Received in broadcast handler=%s on node=%s...\n", strMessage, p.me)
-
-	var m VectorClocksMessage
-	err := Deserialize([]byte(strMessage), &m)
-	if err != nil {
-		fmt.Printf("Unable to unmarshall Lamport Message on node=%s message=%s...\n", p.me, strMessage)
-		return false, "", fmt.Errorf("unable to unmarshall json: %w", err)
+		p.sortedPeerNames = append(p.sortedPeerNames, peer.NodeName)
 	}
 
-	p.serverTimeMU.Lock()
-	p.serverTimes[p.me.NodeName]++
-
-	for node, ts := range m.Timestamps {
-		existingTs := p.serverTimes[node]
-		ts := math.Max(float64(ts), float64(existingTs)) + 1
-		p.serverTimes[node] = int(ts)
-	}
-
-	p.messages = append(p.messages, m)
-	p.serverTimeMU.Unlock()
-	fmt.Printf("Received message=%s on node=%s...\n", m.Body, p.WhoAmI())
-
-	return false, broadCastPeerResponse, nil
+	sort.Strings(p.sortedPeerNames)
 }
 
 func (p *VectorClocksPeer) newMessage(val string) VectorClocksMessage {
-	return VectorClocksMessage{
+	p.serverTimeMU.Lock()
+	defer p.serverTimeMU.Unlock()
+
+	p.serverTimes[p.me.NodeName]++
+	messageTimes := make(map[string]int)
+	for nodeName, ts := range p.serverTimes {
+		messageTimes[nodeName] = ts
+	}
+	m := VectorClocksMessage{
 		Origin:     p.me,
-		Timestamps: p.serverTimes,
+		Timestamps: messageTimes,
 		Body:       val,
 	}
+	p.messages = append(p.messages, m)
+
+	return m
 }

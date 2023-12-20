@@ -8,6 +8,54 @@ import (
 	"time"
 )
 
+func TestReceiveBroadcast(t *testing.T) {
+	// create server topology
+	serverInfos := []topology.ServerInfo{
+		topology.NewServerInfo("A", 8080, ""),
+		topology.NewServerInfo("B", 8081, ""),
+		topology.NewServerInfo("C", 8082, ""),
+	}
+	var peers []*VectorClocksPeer
+	for i, sInfo := range serverInfos {
+		var peerTopology []topology.ServerInfo
+		for j := 0; j < i; j++ {
+			peerTopology = append(peerTopology, serverInfos[j])
+		}
+		if i < len(serverInfos) {
+			peerTopology = append(peerTopology, serverInfos[i+1:]...)
+		}
+
+		peer := NewVectorClocksPeer(sInfo, peerTopology)
+		peers = append(peers, peer)
+	}
+
+	m := peers[2].newMessage("message-C")
+	b, err := Serialize(m)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	str := string(b)
+	peers[0].receiveBroadcast(str)
+	peers[1].receiveBroadcast(str)
+
+	m = peers[1].newMessage("message-B")
+	b, err = Serialize(m)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	str = string(b)
+	peers[0].receiveBroadcast(str)
+	peers[2].receiveBroadcast(str)
+
+	m = peers[0].newMessage("message-A")
+	b, err = Serialize(m)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	peers[1].receiveBroadcast(string(b))
+	peers[2].receiveBroadcast(string(b))
+}
+
 func TestBroadcast(t *testing.T) {
 	// create server topology
 	serverInfos := []topology.ServerInfo{
@@ -77,13 +125,19 @@ func TestBroadcast(t *testing.T) {
 		"message-A",
 	}
 	for _, p := range peers {
-		messages := p.Messages()
+		messages := p.Messages(false)
 		for i, m := range messages {
-			if expectMessageOrder[i] != m.Body {
-				t.Fatalf("Unexpected message order for node=%s. total order is=%+v, but got=%+v",
+			if expectMessageOrder[i] != m {
+				allNodes := make([]string, 0, len(peers))
+				for _, p := range peers {
+					allNodes = append(allNodes, fmt.Sprintf("[%s]->>%+v\n", p.WhoAmI(), p.Messages(true)))
+				}
+
+				t.Fatalf("Unexpected message order for node=%s. total order is=%+v, but got=%+v\n\nall nodes=%+v",
 					p.WhoAmI(),
 					expectMessageOrder,
-					messages)
+					messages,
+					allNodes)
 			}
 		}
 	}
